@@ -1,0 +1,8 @@
+Extract the hardware requirements from the natural-language specification.
+Identify:
+- Inputs and outputs
+- Reset behavior
+- Clocking behavior
+- Sequential vs combinational behavior
+- Edge cases
+- Any examples in the spec

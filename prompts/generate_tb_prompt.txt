@@ -1,0 +1,7 @@
+Generate a complete self-checking Verilog testbench for the DUT.
+The testbench should:
+- Instantiate the DUT
+- Generate clock/reset if needed
+- Apply directed tests
+- Check expected outputs
+- Print enough debug information for iteration
