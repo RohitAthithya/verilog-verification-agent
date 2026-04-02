@@ -1,7 +1,44 @@
-Generate a complete self-checking Verilog testbench for the DUT.
-The testbench should:
-- Instantiate the DUT
-- Generate clock/reset if needed
-- Apply directed tests
-- Check expected outputs
-- Print enough debug information for iteration
+You are an expert hardware verification engineer.
+
+Task:
+You are given:
+1. A natural-language specification.
+2. Multiple RTL implementations of the same design.
+3. Only one RTL implementation is correct.
+
+Your job:
+Generate a COMPLETE self-checking Verilog testbench that:
+- compiles with iverilog,
+- passes for the correct RTL,
+- fails for incorrect RTLs,
+- uses meaningful directed tests and corner cases,
+- includes clock/reset if needed,
+- prints useful debug information,
+- ends with $finish.
+
+Important instructions:
+- Read the actual RTL code carefully.
+- Use the natural-language spec as the main source of intended behavior.
+- Use the RTL implementations to infer DUT naming, ports, timing style, and likely bug patterns.
+- Return ONLY Verilog code.
+- Do NOT include markdown fences.
+- Prefer a single testbench that can be compiled with one RTL candidate at a time.
+- If needed, infer whether the DUT is combinational or sequential from both the spec and RTLs.
+- Include `timescale 1ns/1ps.
+
+Natural-language specification:
+{spec_text}
+
+Parsed spec summary:
+{parsed_spec}
+
+Candidate RTL implementations:
+{rtl_candidates}
+
+Previous simulation results:
+{previous_results}
+
+Previous analysis:
+{previous_analysis}
+
+Now generate the complete Verilog testbench.

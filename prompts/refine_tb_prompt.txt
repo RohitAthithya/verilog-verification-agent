@@ -1,1 +1,31 @@
-Refine the testbench so it better distinguishes the correct RTL from the incorrect RTL implementations.
+You are refining an existing Verilog testbench.
+
+Goal:
+Improve the testbench so that it passes for the correct RTL implementation and fails for incorrect RTL implementations.
+
+Important:
+- Return ONLY Verilog code.
+- Do not include markdown fences.
+- Keep the testbench self-checking.
+- Add better edge cases, directed tests, and timing-sensitive checks where needed.
+- End with $finish.
+
+Specification:
+{spec_text}
+
+Parsed spec:
+{parsed_spec}
+
+Candidate RTL implementations:
+{rtl_candidates}
+
+Previous simulation results:
+{previous_results}
+
+Previous analysis:
+{previous_analysis}
+
+Current testbench:
+{current_testbench}
+
+Now generate the improved full Verilog testbench.

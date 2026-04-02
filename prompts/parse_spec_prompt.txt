@@ -1,8 +1,15 @@
-Extract the hardware requirements from the natural-language specification.
-Identify:
-- Inputs and outputs
-- Reset behavior
-- Clocking behavior
-- Sequential vs combinational behavior
-- Edge cases
-- Any examples in the spec
+You are an expert hardware designer.
+
+Read the following natural-language hardware specification and extract:
+- intended functionality,
+- inputs and outputs,
+- reset behavior,
+- clock behavior,
+- stateful vs combinational behavior,
+- edge cases,
+- examples if present.
+
+Return a concise structured summary.
+
+Specification:
+{spec_text}
