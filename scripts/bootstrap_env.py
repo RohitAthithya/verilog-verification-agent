@@ -57,7 +57,7 @@ def main() -> int:
 
     problems_dir = root / "problems"
     problem_dir = problems_dir / problem
-    spec_file = problem_dir / "spec" / "spec.txt"
+    spec_dir = problem_dir / "spec"
     rtl_dir = problem_dir / "rtl"
 
     soft_constraints_file = root / "soft_constraints" / "global_soft_constraints.md"
@@ -82,9 +82,24 @@ def main() -> int:
         print(f"[error] Problem directory not found: {problem_dir}")
         return 1
 
-    if not spec_file.exists():
-        print(f"[error] Spec file not found: {spec_file}")
+    if not spec_dir.exists():
+        print(f"[error] Spec directory not found: {spec_dir}")
         return 1
+
+    spec_files = sorted(
+        [
+            p for p in spec_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in {".md", ".txt", ".rst"}
+        ]
+    )
+
+    if not spec_files:
+        print(f"[error] No supported spec files found in: {spec_dir}")
+        return 1
+
+    print(f"[info] Found {len(spec_files)} spec file(s).")
+    for spec_path in spec_files:
+        print(f"[info] Spec input: {spec_path}")
 
     if not rtl_dir.exists():
         print(f"[error] RTL directory not found: {rtl_dir}")
@@ -126,7 +141,9 @@ def main() -> int:
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "project_root": str(root),
         "problem": problem,
-        "spec_file": str(spec_file),
+        "spec_dir": str(spec_dir),
+        "spec_files": [str(p) for p in spec_files],
+        "spec_count": len(spec_files),
         "rtl_dir": str(rtl_dir),
         "rtl_count": len(rtl_files),
         "required_tools": required,
