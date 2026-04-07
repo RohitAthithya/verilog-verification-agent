@@ -1,6 +1,6 @@
 import re
 
-
+# need not be  a fixed format, so the spec can go directly to the LLM
 def parse_spec(spec_text: str) -> dict:
     text = spec_text.strip()
 
