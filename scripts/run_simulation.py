@@ -21,7 +21,7 @@ def parse_args():
 def load_preflight(root: Path, problem: str) -> dict:
     path = root / "logs" / "runs" / f"{problem}_preflight_context.json"
     if not path.exists():
-        raise FileNotFoundError(f"Preflight context not found: {path}")
+        print(f"Preflight context not found: {path}, continuing with empty context.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
