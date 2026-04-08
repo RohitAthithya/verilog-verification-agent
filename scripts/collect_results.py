@@ -63,11 +63,12 @@ def main() -> int:
     passed = []
     failed = []
     compile_errors = []
-    run_not_started = []
+    run_errors = []
+    unknown = []
 
     for item in results:
         status = item.get("status")
-        candidate_name = item.get("candidate_name")
+        candidate_name = item.get("candidate") or item.get("candidate_name")
 
         if status == "pass":
             passed.append(candidate_name)
@@ -75,10 +76,12 @@ def main() -> int:
             failed.append(candidate_name)
         elif status == "compile_error":
             compile_errors.append(candidate_name)
-        elif status == "run_not_started":
-            run_not_started.append(candidate_name)
+        elif status == "run_error":
+            run_errors.append(candidate_name)
+        else:
+            unknown.append(candidate_name)
 
-    solved = len(passed) == 1 and len(failed) + len(compile_errors) + len(run_not_started) == len(results) - 1
+    solved = len(passed) == 1 and len(failed) + len(compile_errors) + len(run_errors) + len(unknown) == len(results) - 1
 
     status_label = "solved" if solved else "unsolved"
 
@@ -91,11 +94,13 @@ def main() -> int:
         "num_passed": len(passed),
         "num_failed": len(failed),
         "num_compile_errors": len(compile_errors),
-        "num_run_not_started": len(run_not_started),
+        "num_run_errors": len(run_errors),
+        "num_unknown": len(unknown),
         "passed_candidates": passed,
         "failed_candidates": failed,
         "compile_error_candidates": compile_errors,
-        "run_not_started_candidates": run_not_started,
+        "run_error_candidates": run_errors,
+        "unknown_candidates": unknown,
         "decision": {
             "exactly_one_pass": len(passed) == 1,
             "ready_for_refinement": not solved,
@@ -117,7 +122,8 @@ def main() -> int:
         f"Passed: {len(passed)}",
         f"Failed: {len(failed)}",
         f"Compile errors: {len(compile_errors)}",
-        f"Run not started: {len(run_not_started)}",
+        f"Run errors: {len(run_errors)}",
+        f"Unknown: {len(unknown)}",
         "",
         "Passed candidates:",
     ]
@@ -149,11 +155,21 @@ def main() -> int:
 
     report_lines.extend([
         "",
-        "Run-not-started candidates:",
+        "Run-error candidates:",
     ])
 
-    if run_not_started:
-        report_lines.extend(f"- {name}" for name in run_not_started)
+    if run_errors:
+        report_lines.extend(f"- {name}" for name in run_errors)
+    else:
+        report_lines.append("- None")
+
+    report_lines.extend([
+        "",
+        "Unknown candidates:",
+    ])
+
+    if unknown:
+        report_lines.extend(f"- {name}" for name in unknown)
     else:
         report_lines.append("- None")
 
@@ -174,7 +190,8 @@ def main() -> int:
     print(f"[info] Passed: {len(passed)}")
     print(f"[info] Failed: {len(failed)}")
     print(f"[info] Compile errors: {len(compile_errors)}")
-    print(f"[info] Run not started: {len(run_not_started)}")
+    print(f"[info] Run errors: {len(run_errors)}")
+    print(f"[info] Unknown: {len(unknown)}")
     print(f"[info] Overall status: {status_label}")
     print(f"[info] Analysis JSON written to: {interpretation_json}")
     print(f"[info] Analysis report written to: {interpretation_md}")

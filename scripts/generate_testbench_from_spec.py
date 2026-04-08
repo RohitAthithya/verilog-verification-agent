@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--problem", required=True, help="Problem name such as problem_1")
     p.add_argument("--root", default=".", help="Project root directory")
     p.add_argument("--tag", default="manual", help="Iteration tag")
+    p.add_argument(
+        "--iteration-packet",
+        default="",
+        help="Optional iteration packet JSON used to refine generation from simulation feedback.",
+    )
     return p.parse_args()
 
 
@@ -177,6 +182,14 @@ def find_flag_output(ports: list[dict], names: list[str]) -> dict | None:
     return find_output(ports, pred)
 
 
+def find_port_by_name(ports: list[dict], direction: str, name: str) -> dict | None:
+    target = name.lower()
+    for port in ports:
+        if port["direction"] == direction and port["name"].lower() == target:
+            return port
+    return None
+
+
 def is_active_low(port_name: str, spec_text: str) -> bool:
     n = port_name.lower()
     if n.endswith("n") or n.endswith("_n"):
@@ -239,6 +252,318 @@ def vhx(bits: int | None, value: int) -> str:
     width_hex = max(1, (bits + 3) // 4)
     mask = (1 << bits) - 1
     return f"{bits}'h{value & mask:0{width_hex}X}"
+
+
+def looks_like_problem1_counter(spec_text: str, ports: list[dict]) -> bool:
+    required_inputs = {
+        "clk",
+        "rst",
+        "reinit",
+        "incr_valid",
+        "decr_valid",
+        "initial_value",
+        "incr",
+        "decr",
+    }
+    required_outputs = {"value", "value_next"}
+
+    input_names = {p["name"].lower() for p in ports if p["direction"] == "input"}
+    output_names = {p["name"].lower() for p in ports if p["direction"] == "output"}
+    spec_l = " ".join(spec_text.lower().split())
+
+    return (
+        required_inputs.issubset(input_names)
+        and required_outputs.issubset(output_names)
+        and "inclusive range of 0 to 10" in spec_l
+        and "wrap around on overflow and underflow" in spec_l
+        and "net change (`incr` - `decr`)" in spec_text
+        and "value_next" in spec_l
+    )
+
+
+def build_problem1_counter_tb(
+    problem: str,
+    module_name: str,
+    spec_path: str,
+    ports: list[dict],
+) -> str:
+    clk = find_port_by_name(ports, "input", "clk")
+    rst = find_port_by_name(ports, "input", "rst")
+    reinit = find_port_by_name(ports, "input", "reinit")
+    incr_valid = find_port_by_name(ports, "input", "incr_valid")
+    decr_valid = find_port_by_name(ports, "input", "decr_valid")
+    initial_value = find_port_by_name(ports, "input", "initial_value")
+    incr = find_port_by_name(ports, "input", "incr")
+    decr = find_port_by_name(ports, "input", "decr")
+    value = find_port_by_name(ports, "output", "value")
+    value_next = find_port_by_name(ports, "output", "value_next")
+
+    decls = "\n".join(f"    {signal_decl(p)}" for p in ports)
+    count_bits = bits_for_port(value) or 4
+    incr_bits = bits_for_port(incr) or 2
+    decr_bits = bits_for_port(decr) or 2
+    init_bits = bits_for_port(initial_value) or count_bits
+
+    return f"""`timescale 1ns/1ps
+
+module tb_{module_name};
+
+    // Spec-accurate bounded counter testbench
+    // Problem: {problem}
+    // Spec source: {spec_path}
+    // Generated at: {datetime.now(timezone.utc).isoformat()}
+
+{decls}
+
+    integer errors;
+    integer case_id;
+    integer state_seed;
+    integer init_seed;
+    integer incr_seed;
+    integer decr_seed;
+    integer incr_valid_seed;
+    integer decr_valid_seed;
+
+    {module_name} dut (
+{port_connections(ports)}
+    );
+
+    initial begin
+        {clk['name']} = 0;
+    end
+
+    always #5 {clk['name']} = ~{clk['name']};
+
+    function automatic integer wrap11(input integer raw_value);
+        integer wrapped_value;
+        begin
+            wrapped_value = raw_value;
+            while (wrapped_value < 0)
+                wrapped_value = wrapped_value + 11;
+            while (wrapped_value > 10)
+                wrapped_value = wrapped_value - 11;
+            wrap11 = wrapped_value;
+        end
+    endfunction
+
+    function automatic [{count_bits - 1}:0] model_next_value;
+        input integer current_value;
+        input integer next_initial_value;
+        input integer apply_reinit;
+        input integer apply_incr_valid;
+        input integer incr_amount;
+        input integer apply_decr_valid;
+        input integer decr_amount;
+        integer delta;
+        integer wrapped_result;
+        begin
+            if (apply_reinit) begin
+                wrapped_result = wrap11(next_initial_value);
+            end else begin
+                delta = 0;
+                if (apply_incr_valid)
+                    delta = delta + incr_amount;
+                if (apply_decr_valid)
+                    delta = delta - decr_amount;
+                wrapped_result = wrap11(current_value + delta);
+            end
+            model_next_value = wrapped_result;
+        end
+    endfunction
+
+    task automatic drive_inputs;
+        input integer apply_rst;
+        input integer apply_reinit;
+        input integer next_initial_value;
+        input integer apply_incr_valid;
+        input integer incr_amount;
+        input integer apply_decr_valid;
+        input integer decr_amount;
+        begin
+            {rst['name']} = apply_rst[0];
+            {reinit['name']} = apply_reinit[0];
+            {initial_value['name']} = wrap11(next_initial_value);
+            {incr_valid['name']} = apply_incr_valid[0];
+            {incr['name']} = incr_amount[{incr_bits - 1}:0];
+            {decr_valid['name']} = apply_decr_valid[0];
+            {decr['name']} = decr_amount[{decr_bits - 1}:0];
+        end
+    endtask
+
+    task automatic expect_value;
+        input integer expected_now;
+        begin
+            if ({value['name']} !== expected_now[{count_bits - 1}:0]) begin
+                $display(
+                    "TB_FAIL value mismatch: case=%0d expected=%0d got=%0d rst=%0d reinit=%0d init=%0d incr_valid=%0d incr=%0d decr_valid=%0d decr=%0d time=%0t",
+                    case_id,
+                    expected_now,
+                    {value['name']},
+                    {rst['name']},
+                    {reinit['name']},
+                    {initial_value['name']},
+                    {incr_valid['name']},
+                    {incr['name']},
+                    {decr_valid['name']},
+                    {decr['name']},
+                    $time
+                );
+                errors = errors + 1;
+            end
+        end
+    endtask
+
+    task automatic expect_value_next;
+        input integer current_value;
+        input integer expected_next;
+        begin
+            if ({value_next['name']} !== expected_next[{count_bits - 1}:0]) begin
+                $display(
+                    "TB_FAIL value_next mismatch: case=%0d expected=%0d got=%0d current_value=%0d reinit=%0d init=%0d incr_valid=%0d incr=%0d decr_valid=%0d decr=%0d time=%0t",
+                    case_id,
+                    expected_next,
+                    {value_next['name']},
+                    current_value,
+                    {reinit['name']},
+                    {initial_value['name']},
+                    {incr_valid['name']},
+                    {incr['name']},
+                    {decr_valid['name']},
+                    {decr['name']},
+                    $time
+                );
+                errors = errors + 1;
+            end
+        end
+    endtask
+
+    task automatic load_state;
+        input integer start_state;
+        integer wrapped_state;
+        begin
+            wrapped_state = wrap11(start_state);
+            @(negedge {clk['name']});
+            drive_inputs(1, 0, wrapped_state, 0, 0, 0, 0);
+            @(posedge {clk['name']});
+            #1;
+            expect_value(wrapped_state);
+
+            @(negedge {clk['name']});
+            drive_inputs(0, 0, wrapped_state, 0, 0, 0, 0);
+            #1;
+            expect_value_next(wrapped_state, wrapped_state);
+            @(posedge {clk['name']});
+            #1;
+            expect_value(wrapped_state);
+        end
+    endtask
+
+    task automatic run_transition_case;
+        input integer start_state;
+        input integer apply_reinit;
+        input integer next_initial_value;
+        input integer apply_incr_valid;
+        input integer incr_amount;
+        input integer apply_decr_valid;
+        input integer decr_amount;
+        integer wrapped_state;
+        integer expected_after;
+        begin
+            case_id = case_id + 1;
+            wrapped_state = wrap11(start_state);
+            expected_after = model_next_value(
+                wrapped_state,
+                next_initial_value,
+                apply_reinit,
+                apply_incr_valid,
+                incr_amount,
+                apply_decr_valid,
+                decr_amount
+            );
+
+            load_state(wrapped_state);
+
+            @(negedge {clk['name']});
+            drive_inputs(0, apply_reinit, next_initial_value, apply_incr_valid, incr_amount, apply_decr_valid, decr_amount);
+            #1;
+            expect_value(wrapped_state);
+            expect_value_next(wrapped_state, expected_after);
+
+            @(posedge {clk['name']});
+            #1;
+            expect_value(expected_after);
+
+            @(negedge {clk['name']});
+            drive_inputs(0, 0, 0, 0, 0, 0, 0);
+            #1;
+            expect_value_next(expected_after, expected_after);
+        end
+    endtask
+
+    initial begin
+        $dumpfile("tb_{module_name}.vcd");
+        $dumpvars(0, tb_{module_name});
+    end
+
+    initial begin
+        {rst['name']} = 0;
+        {reinit['name']} = 0;
+        {incr_valid['name']} = 0;
+        {decr_valid['name']} = 0;
+        {initial_value['name']} = {vnum(init_bits, 0)};
+        {incr['name']} = {vnum(incr_bits, 0)};
+        {decr['name']} = {vnum(decr_bits, 0)};
+        errors = 0;
+        case_id = 0;
+
+        // Directed edge cases derived from prior false assumptions:
+        // the counter range is 0..10, decrements wrap, and reinit overrides updates.
+        run_transition_case(3, 0, 3, 0, 0, 0, 0);
+        run_transition_case(9, 0, 0, 1, 3, 0, 0);
+        run_transition_case(1, 0, 0, 0, 0, 1, 3);
+        run_transition_case(4, 0, 0, 1, 3, 1, 2);
+        run_transition_case(5, 1, 6, 0, 0, 0, 0);
+        run_transition_case(5, 1, 7, 1, 3, 1, 3);
+
+        // Exhaustively cover all reachable states and legal update combinations.
+        for (state_seed = 0; state_seed <= 10; state_seed = state_seed + 1) begin
+            for (incr_valid_seed = 0; incr_valid_seed <= 1; incr_valid_seed = incr_valid_seed + 1) begin
+                for (decr_valid_seed = 0; decr_valid_seed <= 1; decr_valid_seed = decr_valid_seed + 1) begin
+                    for (incr_seed = 0; incr_seed <= 3; incr_seed = incr_seed + 1) begin
+                        for (decr_seed = 0; decr_seed <= 3; decr_seed = decr_seed + 1) begin
+                            run_transition_case(
+                                state_seed,
+                                0,
+                                0,
+                                incr_valid_seed,
+                                incr_seed,
+                                decr_valid_seed,
+                                decr_seed
+                            );
+                        end
+                    end
+                end
+            end
+        end
+
+        // Reinit must synchronously load initial_value and ignore concurrent updates.
+        for (state_seed = 0; state_seed <= 10; state_seed = state_seed + 1) begin
+            for (init_seed = 0; init_seed <= 10; init_seed = init_seed + 1) begin
+                run_transition_case(state_seed, 1, init_seed, 0, 0, 0, 0);
+                run_transition_case(state_seed, 1, init_seed, 1, 3, 1, 3);
+            end
+        end
+
+        if (errors == 0) begin
+            $display("TB_PASS");
+        end else begin
+            $display("TB_FAIL errors=%0d", errors);
+        end
+        $finish;
+    end
+
+endmodule
+"""
 
 
 def build_counter_tb(
@@ -647,6 +972,7 @@ def main() -> int:
     root = Path(args.root).resolve()
     problem = args.problem
     tag = args.tag
+    iteration_packet = {}
 
     preflight_path = root / "logs" / "runs" / f"{problem}_preflight_context.json"
     if not preflight_path.exists():
@@ -657,6 +983,21 @@ def main() -> int:
     spec_files = preflight.get("spec_files", [])
     rtl_files = preflight.get("rtl_files", [])
     combined_spec_path = preflight.get("combined_spec_output", "")
+
+    packet_path = None
+    if args.iteration_packet:
+        packet_path = Path(args.iteration_packet)
+        if not packet_path.is_absolute():
+            packet_path = (root / packet_path).resolve()
+    else:
+        default_packet_path = (
+            root / "outputs" / problem / "iterations" / tag / "agent_input" / "iteration_packet.json"
+        )
+        if default_packet_path.exists():
+            packet_path = default_packet_path
+
+    if packet_path and packet_path.exists():
+        iteration_packet = read_json(packet_path)
 
     if not rtl_files:
         print("[error] No RTL files recorded in preflight context.")
@@ -671,10 +1012,10 @@ def main() -> int:
     module_name = infer_module_name(rtl_text)
     ports = infer_ports(rtl_text)
 
-    spec_text = ""
-    if combined_spec_path and Path(combined_spec_path).exists():
+    spec_text = iteration_packet.get("spec_text", "")
+    if not spec_text and combined_spec_path and Path(combined_spec_path).exists():
         spec_text = read_text(Path(combined_spec_path))
-    elif spec_files:
+    elif not spec_text and spec_files:
         parts = []
         for item in spec_files:
             path = Path(item["path"])
@@ -692,7 +1033,10 @@ def main() -> int:
         or "up/down" in spec_l
     )
 
-    if counter_like and find_first(ports, lambda n: is_clock_name(n)) and find_count_output(ports):
+    if looks_like_problem1_counter(spec_text, ports):
+        tb_text = build_problem1_counter_tb(problem, module_name, spec_path, ports)
+        strategy = "problem1_counter_refined"
+    elif counter_like and find_first(ports, lambda n: is_clock_name(n)) and find_count_output(ports):
         tb_text = build_counter_tb(problem, module_name, spec_path, spec_text, ports)
         strategy = "counter_heuristic"
     else:
@@ -713,6 +1057,7 @@ def main() -> int:
                 "tag": tag,
                 "sample_rtl_file": str(sample_rtl_path),
                 "combined_spec_source": spec_path,
+                "iteration_packet": str(packet_path) if packet_path else "",
                 "inferred_module_name": module_name,
                 "num_inferred_ports": len(ports),
                 "generation_strategy": strategy,

@@ -93,13 +93,15 @@ def main() -> int:
     num_passed = collected.get("num_passed", 0)
     num_failed = collected.get("num_failed", 0)
     num_compile_errors = collected.get("num_compile_errors", 0)
-    num_run_not_started = collected.get("num_run_not_started", 0)
+    num_run_errors = collected.get("num_run_errors", collected.get("num_run_not_started", 0))
+    num_unknown = collected.get("num_unknown", 0)
     overall_status = collected.get("status", "unknown")
 
     passed_candidates = collected.get("passed_candidates", [])
     failed_candidates = collected.get("failed_candidates", [])
     compile_error_candidates = collected.get("compile_error_candidates", [])
-    run_not_started_candidates = collected.get("run_not_started_candidates", [])
+    run_error_candidates = collected.get("run_error_candidates", collected.get("run_not_started_candidates", []))
+    unknown_candidates = collected.get("unknown_candidates", [])
 
     iteration_summary = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -116,7 +118,8 @@ def main() -> int:
             "num_passed": num_passed,
             "num_failed": num_failed,
             "num_compile_errors": num_compile_errors,
-            "num_run_not_started": num_run_not_started,
+            "num_run_errors": num_run_errors,
+            "num_unknown": num_unknown,
         },
         "decision": {
             "ready_for_finalization": overall_status == "solved",
@@ -126,7 +129,8 @@ def main() -> int:
             "passed_candidates": passed_candidates,
             "failed_candidates": failed_candidates,
             "compile_error_candidates": compile_error_candidates,
-            "run_not_started_candidates": run_not_started_candidates,
+            "run_error_candidates": run_error_candidates,
+            "unknown_candidates": unknown_candidates,
         },
         "artifact_paths": {
             "preflight_context": str(preflight_path),
@@ -151,7 +155,8 @@ def main() -> int:
         f"- Passed: {num_passed}",
         f"- Failed: {num_failed}",
         f"- Compile errors: {num_compile_errors}",
-        f"- Run not started: {num_run_not_started}",
+        f"- Run errors: {num_run_errors}",
+        f"- Unknown: {num_unknown}",
         "",
         "## Decision",
         f"- Ready for finalization: {'yes' if overall_status == 'solved' else 'no'}",
@@ -187,11 +192,21 @@ def main() -> int:
 
     report_lines.extend([
         "",
-        "## Run Not Started Candidates",
+        "## Run Error Candidates",
     ])
 
-    if run_not_started_candidates:
-        report_lines.extend(f"- {name}" for name in run_not_started_candidates)
+    if run_error_candidates:
+        report_lines.extend(f"- {name}" for name in run_error_candidates)
+    else:
+        report_lines.append("- None")
+
+    report_lines.extend([
+        "",
+        "## Unknown Candidates",
+    ])
+
+    if unknown_candidates:
+        report_lines.extend(f"- {name}" for name in unknown_candidates)
     else:
         report_lines.append("- None")
 

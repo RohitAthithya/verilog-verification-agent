@@ -171,11 +171,13 @@ def main() -> int:
         "soft_constraints_present": bool(soft_constraints_text),
         "memory_file": str(memory_file),
         "memory_present": bool(memory_text),
+        "combined_spec_output": "",
         "status": "loaded",
     }
 
     combined_spec_path = reports_dir / "combined_spec_context.md"
     combined_spec_path.write_text(combined_spec_text + "\n", encoding="utf-8")
+    preflight_context["combined_spec_output"] = str(combined_spec_path)
 
     preflight_json_path = logs_runs_dir / f"{problem}_preflight_context.json"
     preflight_json_path.write_text(

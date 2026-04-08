@@ -2,18 +2,18 @@
 
 ## Goal
 
-Build and refine a Verilog testbench for a given verification problem.
+Build and iteratively refine a Verilog/SystemVerilog testbench for a Topic 2 design-verification problem.
 
-For each problem:
+For each selected problem, the agent should:
 - read the natural-language specification,
-- inspect all RTL candidates named mutants...v/ mutants...sv,
-- generate a complete self-checking Verilog testbench,
-- run simulation across all candidates,
-- analyze the outputs,
-- refine the testbench iteratively,
-- stop only when exactly one RTL passes and all others fail.
+- inspect the RTL candidates,
+- read the latest iteration packet and simulation summaries,
+- improve the testbench generation or refinement flow,
+- preserve compatibility with iverilog -g2012,
+- preserve TB_PASS and TB_FAIL markers,
+- use simulation feedback to improve the next iteration.
 
-The final output must be a golden testbench that uniquely identifies the correct RTL candidate.
+The immediate objective is to improve the generation/refinement loop, not to hardcode a one-off fix for a single generated testbench.
 
 ---
 
@@ -26,201 +26,87 @@ Each verification problem contains:
 - multiple RTL candidates,
 - exactly one correct RTL implementation.
 
-The agent must generate a Verilog testbench that:
+The agent must help generate a Verilog testbench that:
 - passes for the correct RTL,
-- fails for the incorrect RTLs,
-- and can therefore distinguish the correct implementation from the wrong ones.
-
-The workflow is fully automated after launch.
+- fails for incorrect RTLs,
+- and improves over repeated simulation-guided iterations.
 
 ---
 
 ## Inputs
 
 For a selected problem, the agent may use:
-
-- `problems/<problem_name>/spec/spec.txt`
-- `problems/<problem_name>/rtl/*.v`
-- `soft_constraints/global_soft_constraints.md`
-- `memory/lessons/cumulative_lessons.md`
+- `logs/runs/<problem_name>_preflight_context.json`
+- `outputs/<problem_name>/iterations/<tag>/agent_input/iteration_packet.json`
+- `outputs/<problem_name>/iterations/<tag>/agent_input/iteration_packet.md`
+- `outputs/<problem_name>/iterations/<tag>/generated_tb.v`
+- `outputs/<problem_name>/iterations/<tag>/simulation/summaries/simulation_summary.json`
+- `outputs/<problem_name>/iterations/<tag>/analysis/collected_results.json`
+- problem specification files and RTL files referenced by the preflight context
 
 ---
 
 ## Outputs
 
-For a selected problem, the agent is expected to produce:
-
-- generated testbench versions for each iteration,
-- simulation-aware refinements,
+The agent may update or create:
+- testbench generation/refinement scripts,
+- prompt templates,
+- generated testbench versions,
 - iteration notes,
-- a final golden testbench,
-- detailed and short reports,
-- summarized lessons for future problems.
-
----
-
-## High-Level Behavior
-
-The agent must follow this reasoning pattern:
-
-1. Read and understand the specification.
-2. Inspect the RTL candidates and infer the common interface.
-3. Use the global soft constraints as guidance for verification planning.
-4. Use cumulative summarized lessons from prior problems if available.
-5. Generate a complete self-checking Verilog testbench.
-6. Trigger simulation using the provided scripts.
-7. Read raw simulation outputs and structured summaries.
-8. Determine whether exactly one RTL passed and all others failed.
-9. If not, analyze why the current testbench is insufficient.
-10. Improve the testbench and try again.
-11. Record what changed in each iteration.
-12. Stop only when a perfect discriminator is found.
-13. Summarize lessons from the solved problem for future use.
+- reusable workflow helpers,
+- reports or summaries for the current iteration.
 
 ---
 
 ## Required Rules
 
-### Rule 1: Never stop early
-Do not stop after generating the first testbench unless the stopping condition is already satisfied.
+### Rule 1: Use real simulation feedback
+Do not rely on reasoning alone. Use simulation summaries, stdout/stderr, and pass/fail markers.
 
-### Rule 2: Use real simulation feedback
-Do not assume correctness from reasoning alone. Use the simulator outputs and refinement loop.
+### Rule 2: Preserve the harness
+Do not break the existing run/simulation/result-collection pipeline unless explicitly necessary.
 
-### Rule 3: Treat soft constraints as guidance only
-The global soft-constraint document is helpful guidance, not a strict rulebook. Use it strongly, but do not follow it blindly if the simulation evidence suggests a better approach.
+### Rule 3: Preserve verdict markers
+Generated testbenches must continue to emit TB_PASS and TB_FAIL markers so downstream scripts can classify outcomes.
 
-### Rule 4: Preserve iteration history
-Each iteration must leave behind a clear artifact trail:
-- generated testbench,
-- simulation outputs,
-- structured result summary,
-- iteration note describing what changed and why.
+### Rule 4: Prefer reusable fixes
+Prefer improving the generator, prompt, or refinement workflow over patching a single generated testbench by hand.
 
-### Rule 5: Use cumulative lessons carefully
-Use previous summarized lessons to improve first-pass behavior, but do not copy old solutions directly.
+### Rule 5: Stay compatible with iverilog
+Generated output should remain compatible with iverilog using `-g2012`.
 
-### Rule 6: Stop only on a perfect discriminator
-A problem is solved only when:
-- exactly one RTL candidate passes,
-- all remaining RTL candidates fail.
-
-Anything less than that is not success.
+### Rule 6: Leave a trace
+When changing files, explain:
+- what changed,
+- why it changed,
+- what command should be run next,
+- what result is expected.
 
 ---
 
-## Testbench Expectations
-
-The generated testbench should be:
-
-- complete,
-- self-checking,
-- readable,
-- simulation-ready,
-- focused on distinguishing behavioral differences among RTL candidates.
-
-The testbench should not be a partial skeleton or a placeholder.
-
----
-
-## Iteration Strategy
-
-When refining the testbench, the agent should think in terms of:
-
-- missing behavioral coverage,
-- edge cases not yet tested,
-- reset behavior,
-- timing/sequence-sensitive behavior,
-- corner cases implied by the specification,
-- input combinations not yet exercised,
-- weak or ambiguous checks,
-- insufficient assertions or pass/fail conditions.
-
-The agent should strengthen the testbench based on observed failures and unexplored behavior.
-
----
-
-## Cross-Problem Learning
-
-After solving a problem, the agent should extract summarized lessons such as:
-
-- useful verification categories,
-- failure patterns,
-- successful refinement strategies,
-- helpful testbench organization ideas,
-- common mistakes to avoid in future problems.
-
-Only summarized lessons should be carried forward, not entire old artifacts.
-
----
-
-## Files the agent should read first
+## Files to read first
 
 For a selected problem, read files in this order:
-
-1. `soft_constraints/global_soft_constraints.md`
-2. `memory/lessons/cumulative_lessons.md` if it exists and is non-empty
-3. `problems/<problem_name>/spec/spec.txt`
-4. all RTL files inside `problems/<problem_name>/rtl/`
-
----
-
-## Files the agent should write during execution
-
-The agent should write outputs inside:
-
-- `outputs/<problem_name>/iterations/iter_XX/`
-- `outputs/<problem_name>/final/`
-- `outputs/<problem_name>/reports/`
-
-It should also update:
-
-- `memory/lessons/cumulative_lessons.md`
+1. `outputs/<problem_name>/iterations/<tag>/agent_input/agent_handoff_prompt.txt`
+2. `outputs/<problem_name>/iterations/<tag>/agent_input/iteration_packet.md`
+3. `outputs/<problem_name>/iterations/<tag>/agent_input/iteration_packet.json`
+4. `scripts/run_simulation.py`
+5. `scripts/collect_results.py`
+6. `scripts/summarize_iteration.py`
+7. the current generation/refinement scripts
 
 ---
 
-## Interaction with scripts
+## Interaction Style
 
-The agent should rely on repository scripts for deterministic tasks such as:
+While working, provide concise progress updates such as:
+- reading current iteration packet
+- inspecting current generation flow
+- updating refinement logic
+- ready to rerun simulation
 
-- environment checks,
-- simulator invocation,
-- result collection,
-- output directory preparation,
-- final report assembly.
-
-The agent should focus on:
-- reasoning,
-- testbench generation,
-- refinement decisions,
-- interpretation of results,
-- lesson summarization.
-
----
-
-## Console behavior
-
-During execution, the system should print concise and useful progress messages such as:
-
-- environment check started
-- inputs loaded
-- testbench generation started
-- simulation started
-- iteration result summary
-- refinement started
-- stopping condition met
-- final artifacts written
-
-The agent should support a workflow that is easy for a user or evaluator to follow from the terminal.
-
----
-
-## Final objective
-
-The final objective is not only to solve one problem, but to improve the verification agent itself.
-
-The repository should evolve toward:
-- stronger first-pass testbench generation,
-- better iterative refinement,
-- clearer reports,
-- and better cross-problem verification strategy over time.
+At the end of each task, always provide:
+1. files changed,
+2. why they changed,
+3. exact commands to run next,
+4. what to check in the results.
