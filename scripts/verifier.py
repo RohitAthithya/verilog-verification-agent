@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -250,34 +251,160 @@ def write_prompt(iter_dir: Path, prompt: str) -> Path:
     return path
 
 
+def shorten_output(text: str, max_lines: int = 8, max_chars: int = 1200) -> str:
+    text = text.strip()
+    if not text:
+        return ""
+
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "\n...[truncated]"
+
+    lines = text.splitlines()
+    if len(lines) > max_lines:
+        text = "\n".join(lines[:max_lines]) + "\n...[truncated]"
+
+    return text
+
+
+def render_codex_event(raw_line: str) -> tuple[Optional[str], bool]:
+    line = raw_line.strip()
+    if not line:
+        return None, False
+
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return f"[codex] {line}", False
+
+    event_type = payload.get("type", "")
+    item = payload.get("item") or {}
+    item_type = item.get("type", "")
+
+    if event_type == "thread.started":
+        thread_id = payload.get("thread_id", "")
+        return f"[codex] Thread started: {thread_id}", False
+
+    if event_type == "turn.started":
+        return "[codex] Turn started", False
+
+    if event_type == "turn.completed":
+        usage = payload.get("usage") or {}
+        output_tokens = usage.get("output_tokens")
+        if output_tokens is not None:
+            return f"[codex] Turn completed: output_tokens={output_tokens}", False
+        return "[codex] Turn completed", False
+
+    if item_type == "agent_message" and event_type == "item.completed":
+        text = (item.get("text") or "").strip()
+        if text:
+            return f"[codex] {text}", False
+        return None, False
+
+    if item_type != "command_execution":
+        return None, False
+
+    command = item.get("command", "<unknown command>")
+
+    if event_type == "item.started":
+        return f"[codex][cmd] {command}", False
+
+    if event_type != "item.completed":
+        return None, False
+
+    status = item.get("status", "completed")
+    exit_code = item.get("exit_code")
+    if status == "failed":
+        summary = f"[codex][cmd failed] exit={exit_code} {command}"
+        aggregated_output = shorten_output(item.get("aggregated_output", ""))
+        if aggregated_output:
+            summary = f"{summary}\n{aggregated_output}"
+        return summary, True
+
+    return None, False
+
+
+def stream_codex_stderr(stderr, stderr_log_path: Path) -> None:
+    with stderr_log_path.open("w", encoding="utf-8") as stderr_log:
+        for line in stderr:
+            stderr_log.write(line)
+            stderr_log.flush()
+            print(line, end="", file=sys.stderr)
+
+
 def run_codex(root: Path, iter_dir: Path, prompt: str) -> Path:
     codex_dir = iter_dir / "codex"
     codex_dir.mkdir(parents=True, exist_ok=True)
     final_msg = codex_dir / "final_message.txt"
     events = codex_dir / "events.jsonl"
+    live_output = codex_dir / "live_output.log"
+    stderr_log = codex_dir / "stderr.log"
     prompt_path = write_prompt(iter_dir, prompt)
+    cmd = [
+        "codex",
+        "exec",
+        "-C",
+        str(root),
+        "--full-auto",
+        "--json",
+        "-o",
+        str(final_msg),
+        "-",
+    ]
 
-    proc = run_cmd(
-        [
-            "codex",
-            "exec",
-            "-C",
-            str(root),
-            "--full-auto",
-            "--json",
-            "-o",
-            str(final_msg),
-            "-",
-        ],
-        cwd=root,
-        stdin_text=prompt,
-        check=True,
+    print(f"[run] {' '.join(cmd)}")
+    print("[info] Streaming Codex progress to terminal")
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(root),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
     )
 
-    events.write_text(proc.stdout, encoding="utf-8")
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    assert proc.stderr is not None
+
+    stderr_thread = threading.Thread(
+        target=stream_codex_stderr,
+        args=(proc.stderr, stderr_log),
+        daemon=True,
+    )
+    stderr_thread.start()
+
+    proc.stdin.write(prompt)
+    proc.stdin.close()
+
+    with events.open("w", encoding="utf-8") as events_file, live_output.open(
+        "w",
+        encoding="utf-8",
+    ) as live_output_file:
+        for raw_line in proc.stdout:
+            events_file.write(raw_line)
+            events_file.flush()
+
+            rendered_line, is_error = render_codex_event(raw_line)
+            if rendered_line is None:
+                continue
+
+            live_output_file.write(rendered_line + "\n")
+            live_output_file.flush()
+            print(rendered_line, file=sys.stderr if is_error else sys.stdout)
+
+    rc = proc.wait()
+    stderr_thread.join()
+
+    if rc != 0:
+        raise RuntimeError(f"Command failed ({rc}): {' '.join(cmd)}")
+
     print(f"[info] Codex prompt written to: {prompt_path}")
     print(f"[info] Codex final message written to: {final_msg}")
     print(f"[info] Codex event log written to: {events}")
+    print(f"[info] Codex live output log written to: {live_output}")
+    print(f"[info] Codex stderr log written to: {stderr_log}")
     return final_msg
 
 
@@ -296,10 +423,16 @@ def run_simulation_pipeline(root: Path, problem: str, tag: str, tb_path: Path) -
         ["python3", "scripts/collect_results.py", "--problem", problem, "--root", str(root), "--tag", tag],
         cwd=root,
     )
-    run_cmd(
+    summary_proc = run_cmd(
         ["python3", "scripts/summarize_iteration.py", "--problem", problem, "--root", str(root), "--tag", tag],
         cwd=root,
+        check=False,
     )
+    if summary_proc.returncode != 0:
+        print(
+            "[warn] Iteration summary generation failed; continuing because simulation and "
+            "collected results are the authoritative solved/golden signals."
+        )
     return root / "outputs" / problem / "iterations" / tag / "simulation" / "summaries" / "simulation_summary.json"
 
 
@@ -350,90 +483,95 @@ def write_iteration_metadata(
     (iter_dir / "iteration_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser(description="Automated Codex-driven verifier loop")
     ap.add_argument("--problem", required=True)
     ap.add_argument("--root", default=".")
     ap.add_argument("--max-iters", type=int, default=5)
     args = ap.parse_args()
 
-    root = Path(args.root).resolve()
-    problem = args.problem
-    problem_dir = resolve_problem_dir(root, problem)
-    spec_dir = problem_dir / "spec"
-    rtl_dir = problem_dir / "rtl"
-    spec_text = collect_spec_text(spec_dir)
-    rtl_files = list_rtl_files(rtl_dir)
-    soft_constraints = read_soft_constraints(root)
+    try:
+        root = Path(args.root).resolve()
+        problem = args.problem
+        problem_dir = resolve_problem_dir(root, problem)
+        spec_dir = problem_dir / "spec"
+        rtl_dir = problem_dir / "rtl"
+        spec_text = collect_spec_text(spec_dir)
+        rtl_files = list_rtl_files(rtl_dir)
+        soft_constraints = read_soft_constraints(root)
 
-    prev_iter = latest_iteration_dir(root, problem)
+        prev_iter = latest_iteration_dir(root, problem)
 
-    for _ in range(args.max_iters):
-        idx, iter_dir = next_iteration_dir(root, problem)
-        tag = f"iter_{idx:02d}"
-        tb_path = iter_dir / "generated_tb.v"
+        for _ in range(args.max_iters):
+            idx, iter_dir = next_iteration_dir(root, problem)
+            tag = f"iter_{idx:02d}"
+            tb_path = iter_dir / "generated_tb.v"
 
-        print(f"\n[info] Starting {tag}")
-        print(f"[info] Problem dir: {problem_dir}")
-        print(f"[info] Spec dir: {spec_dir}")
-        print(f"[info] RTL dir: {rtl_dir}")
-        print(f"[info] Target testbench: {tb_path}")
+            print(f"\n[info] Starting {tag}")
+            print(f"[info] Problem dir: {problem_dir}")
+            print(f"[info] Spec dir: {spec_dir}")
+            print(f"[info] RTL dir: {rtl_dir}")
+            print(f"[info] Target testbench: {tb_path}")
 
-        if prev_iter is None:
-            prompt = build_initial_prompt(
-                root,
-                problem_dir,
-                problem,
-                spec_text,
-                rtl_files,
-                soft_constraints,
-                tb_path,
-            )
-        else:
-            prev_tb = prev_iter / "generated_tb.v"
-            summary_path = prev_iter / "simulation" / "summaries" / "simulation_summary.json"
-            collected_path = prev_iter / "analysis" / "collected_results.json"
-            prompt = build_refinement_prompt(
-                root,
-                problem_dir,
-                problem,
-                spec_text,
-                rtl_files,
-                soft_constraints,
-                prev_tb,
-                summary_path,
-                collected_path,
-                tb_path,
-            )
+            if prev_iter is None:
+                prompt = build_initial_prompt(
+                    root,
+                    problem_dir,
+                    problem,
+                    spec_text,
+                    rtl_files,
+                    soft_constraints,
+                    tb_path,
+                )
+            else:
+                prev_tb = prev_iter / "generated_tb.v"
+                summary_path = prev_iter / "simulation" / "summaries" / "simulation_summary.json"
+                collected_path = prev_iter / "analysis" / "collected_results.json"
+                prompt = build_refinement_prompt(
+                    root,
+                    problem_dir,
+                    problem,
+                    spec_text,
+                    rtl_files,
+                    soft_constraints,
+                    prev_tb,
+                    summary_path,
+                    collected_path,
+                    tb_path,
+                )
 
-        prompt_path = write_prompt(iter_dir, prompt)
-        run_codex(root, iter_dir, prompt)
+            prompt_path = write_prompt(iter_dir, prompt)
+            run_codex(root, iter_dir, prompt)
 
-        if not tb_path.exists() or tb_path.stat().st_size == 0:
-            raise FileNotFoundError(
-                f"Codex did not create the expected testbench at {tb_path}. "
-                f"Check codex/final_message.txt and codex/events.jsonl"
-            )
+            if not tb_path.exists() or tb_path.stat().st_size == 0:
+                raise FileNotFoundError(
+                    f"Codex did not create the expected testbench at {tb_path}. "
+                    f"Check {iter_dir / 'codex' / 'final_message.txt'} and {iter_dir / 'codex' / 'events.jsonl'}"
+                )
 
-        summary_path = run_simulation_pipeline(root, problem, tag, tb_path)
-        status = read_summary_status(summary_path)
-        write_iteration_metadata(iter_dir, problem, tb_path, prompt_path, prev_iter, status)
+            summary_path = run_simulation_pipeline(root, problem, tag, tb_path)
+            status = read_summary_status(summary_path)
+            write_iteration_metadata(iter_dir, problem, tb_path, prompt_path, prev_iter, status)
 
-        print(f"[info] {tag} counts: {status['counts']}")
-        print(f"[info] Golden found: {status['golden']}")
+            print(f"[info] {tag} counts: {status['counts']}")
+            print(f"[info] Golden found: {status['golden']}")
 
-        if status["golden"]:
-            final_dir = root / "outputs" / problem / "final"
-            final_dir.mkdir(parents=True, exist_ok=True)
-            final_tb = final_dir / "golden_tb.v"
-            final_tb.write_text(read_text(tb_path), encoding="utf-8")
-            print(f"[success] Golden testbench written to: {final_tb}")
-            return
+            if status["golden"]:
+                final_dir = root / "outputs" / problem / "final"
+                final_dir.mkdir(parents=True, exist_ok=True)
+                final_tb = final_dir / "golden_tb.v"
+                final_tb.write_text(read_text(tb_path), encoding="utf-8")
+                print(f"[success] Golden testbench written to: {final_tb}")
+                return 0
 
-        prev_iter = iter_dir
+            prev_iter = iter_dir
 
-    print("[done] Reached max iterations without finding a golden testbench.")
+        print("[done] Reached max iterations without finding a golden testbench.")
+        return 0
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"[error] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

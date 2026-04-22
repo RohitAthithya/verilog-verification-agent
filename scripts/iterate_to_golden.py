@@ -129,10 +129,16 @@ def main():
             cwd=root,
         )
 
-        run_cmd(
+        summarize_rc = run_cmd(
             ["python3", "scripts/summarize_iteration.py", "--problem", problem, "--root", str(root), "--tag", tag],
             cwd=root,
+            allow_fail=True,
         )
+        if summarize_rc != 0:
+            print(
+                "[warn] Iteration summary generation failed; continuing because simulation and "
+                "collected results determine whether the testbench is golden."
+            )
 
         summary_path = root / "outputs" / problem / "iterations" / tag / "simulation" / "summaries" / "simulation_summary.json"
         summary = summarize_statuses(summary_path)

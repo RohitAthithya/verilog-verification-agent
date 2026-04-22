@@ -7,6 +7,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from problem_context import load_problem_context, read_spec_text_from_context
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="Prepare agent iteration packet from current run artifacts.")
@@ -76,6 +78,10 @@ def make_diagnosis(counts: dict) -> str:
     c = counts.get("compile_error", 0)
     r = counts.get("run_error", 0)
     u = counts.get("unknown", 0)
+    total = p + f + c + r + u
+
+    if total > 0 and p == 1 and f == total - 1 and c == 0 and r == 0 and u == 0:
+        return "The current testbench already isolates a single passing RTL. This iteration is ready for finalization."
 
     if p > 0 and f > 0:
         return "The current testbench is discriminating between candidates. Improve precision and try to isolate the correct RTL."
@@ -183,26 +189,14 @@ def main():
     sim_summary_path = iter_dir / "simulation" / "summaries" / "simulation_summary.json"
     collected_path = iter_dir / "analysis" / "collected_results.json"
 
-    if not preflight_path.exists():
-        raise FileNotFoundError(f"Missing preflight context: {preflight_path}")
     if not sim_summary_path.exists():
         raise FileNotFoundError(f"Missing simulation summary: {sim_summary_path}")
 
-    preflight = read_json(preflight_path)
+    preflight, preflight_path = load_problem_context(root, problem, warn=print)
     sim_summary = read_json(sim_summary_path)
     collected = read_json(collected_path) if collected_path.exists() else {}
 
-    combined_spec_output = preflight.get("combined_spec_output")
-    spec_text = ""
-    if combined_spec_output and Path(combined_spec_output).exists():
-        spec_text = read_text(Path(combined_spec_output))
-    else:
-        parts = []
-        for item in preflight.get("spec_files", []):
-            p = Path(item["path"])
-            if p.exists():
-                parts.append(read_text(p))
-        spec_text = "\n\n".join(parts)
+    spec_text = read_spec_text_from_context(preflight)
 
     tb_text = safe_read_text(tb_path)
     counts = summarize_results(sim_summary)
@@ -249,6 +243,8 @@ def main():
     handoff_txt.write_text(handoff_prompt, encoding="utf-8")
 
     print(f"[info] Preflight context: {preflight_path}")
+    if not preflight.get("preflight_available", False):
+        print("[info] Agent packet used inferred problem context.")
     print(f"[info] Simulation summary: {sim_summary_path}")
     print(f"[info] Collected results: {collected_path if collected_path.exists() else 'not found'}")
     print(f"[info] Agent packet JSON written to: {packet_json}")

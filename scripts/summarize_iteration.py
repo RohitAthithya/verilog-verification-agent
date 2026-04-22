@@ -8,6 +8,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from problem_context import load_problem_context
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -69,10 +71,6 @@ def main() -> int:
         / "collected_results.json"
     )
 
-    if not preflight_path.exists():
-        print(f"[error] Preflight context not found: {preflight_path}")
-        return 1
-
     if not sim_summary_path.exists():
         print(f"[error] Simulation summary not found: {sim_summary_path}")
         return 1
@@ -81,13 +79,15 @@ def main() -> int:
         print(f"[error] Collected results not found: {collected_results_path}")
         return 1
 
-    preflight = optional_read_json(preflight_path)
+    preflight, preflight_path = load_problem_context(root, problem, warn=print)
     sim_summary = optional_read_json(sim_summary_path)
     collected = optional_read_json(collected_results_path)
 
     spec_files = preflight.get("spec_files", [])
     rtl_files = preflight.get("rtl_files", [])
     combined_spec_path = preflight.get("combined_spec_output", "")
+    preflight_available = bool(preflight.get("preflight_available", False))
+    context_source = preflight.get("context_source", "unknown")
 
     total_candidates = collected.get("total_candidates", 0)
     num_passed = collected.get("num_passed", 0)
@@ -112,6 +112,8 @@ def main() -> int:
             "num_spec_files": len(spec_files),
             "num_rtl_files": len(rtl_files),
             "combined_spec_output": combined_spec_path,
+            "preflight_available": preflight_available,
+            "context_source": context_source,
         },
         "simulation": {
             "total_candidates": total_candidates,
@@ -146,6 +148,8 @@ def main() -> int:
         f"- Overall status: {overall_status}",
         "",
         "## Inputs",
+        f"- Context source: {context_source}",
+        f"- Preflight available: {'yes' if preflight_available else 'no'}",
         f"- Spec files loaded: {len(spec_files)}",
         f"- RTL candidates loaded: {len(rtl_files)}",
         f"- Combined spec artifact: {combined_spec_path if combined_spec_path else 'N/A'}",
@@ -226,6 +230,8 @@ def main() -> int:
     )
 
     print(f"[info] Preflight context: {preflight_path}")
+    if not preflight_available:
+        print("[info] Iteration summary used inferred problem context.")
     print(f"[info] Simulation summary: {sim_summary_path}")
     print(f"[info] Collected results: {collected_results_path}")
     print(f"[info] Overall status: {overall_status}")

@@ -9,6 +9,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from problem_context import load_problem_context, read_spec_text_from_context
+
 
 MODULE_RE = re.compile(r"\bmodule\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 PORT_RE = re.compile(
@@ -974,12 +976,7 @@ def main() -> int:
     tag = args.tag
     iteration_packet = {}
 
-    preflight_path = root / "logs" / "runs" / f"{problem}_preflight_context.json"
-    if not preflight_path.exists():
-        print(f"[error] Preflight context not found: {preflight_path}")
-        return 1
-
-    preflight = read_json(preflight_path)
+    preflight, preflight_path = load_problem_context(root, problem, warn=print)
     spec_files = preflight.get("spec_files", [])
     rtl_files = preflight.get("rtl_files", [])
     combined_spec_path = preflight.get("combined_spec_output", "")
@@ -1000,7 +997,7 @@ def main() -> int:
         iteration_packet = read_json(packet_path)
 
     if not rtl_files:
-        print("[error] No RTL files recorded in preflight context.")
+        print("[error] No RTL files found in problem context.")
         return 1
 
     sample_rtl_path = Path(rtl_files[0]["path"])
@@ -1013,15 +1010,8 @@ def main() -> int:
     ports = infer_ports(rtl_text)
 
     spec_text = iteration_packet.get("spec_text", "")
-    if not spec_text and combined_spec_path and Path(combined_spec_path).exists():
-        spec_text = read_text(Path(combined_spec_path))
-    elif not spec_text and spec_files:
-        parts = []
-        for item in spec_files:
-            path = Path(item["path"])
-            if path.exists():
-                parts.append(read_text(path))
-        spec_text = "\n".join(parts)
+    if not spec_text:
+        spec_text = read_spec_text_from_context(preflight)
 
     spec_path = combined_spec_path if combined_spec_path else (spec_files[0]["path"] if spec_files else "N/A")
     spec_l = spec_text.lower()
@@ -1070,6 +1060,8 @@ def main() -> int:
     )
 
     print(f"[info] Preflight context: {preflight_path}")
+    if not preflight.get("preflight_available", False):
+        print("[info] Testbench generation used inferred problem context.")
     print(f"[info] Sample RTL used for inference: {sample_rtl_path}")
     print(f"[info] Inferred module name: {module_name}")
     print(f"[info] Inferred ports: {len(ports)}")
