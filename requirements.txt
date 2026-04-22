@@ -1,11 +1,6 @@
-torch
-torchvision
-torchaudio
-transformers>=4.37.0
-accelerate
-bitsandbytes
-safetensors
-sentencepiece
-protobuf
-python-dotenv
-pytest
+openai>=1.30.0
+python-dotenv>=1.0.1
+pydantic>=2.7.0
+rich>=13.7.1
+PyYAML>=6.0.1
+pytest>=8.2.0

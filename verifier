@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="${VERIFIER_ROOT:-$(pwd)}"
+python3 "$ROOT/scripts/verifier.py" "$@"
