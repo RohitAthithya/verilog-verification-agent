@@ -1,25 +1,36 @@
-# project related gitgnore file
-logs/
-outputs/
-problems/*
-*.vcd
+# Runtime artifacts: keep only the directory skeleton in git.
+logs/*
+!logs/.gitkeep
 
-# Byte-compiled / optimized / DLL files
+outputs/*
+!outputs/.gitkeep
+
+# Problem inputs are tracked, but ad hoc local testbenches inside problem folders are not
+# consumed by the active flow.
+problems/**/tb.v
+
+# Python bytecode and caches.
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
+scripts/__pycache__/
 
-# C extensions
+# Local backup and temporary files.
+scripts/*.bak
+tempCodeRunnerFile*
+*.swp
+*.swo
+
+# Verilog/runtime byproducts.
+*.vcd
+*.out
+
+# Python packaging / test artifacts.
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
 dist/
-
-
-# Unit test / coverage reports
 htmlcov/
 .tox/
 .nox/
@@ -33,45 +44,20 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
 .pybuilder/
 target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+.ipynb_checkpoints/
 __pypackages__/
 
-
-# Environments
+# Local virtual environments.
 .env
 .envrc
-.venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
 
+# Local-only extras currently present in the workspace but not needed to rerun the flow.
+phase2_progress_report.pdf
