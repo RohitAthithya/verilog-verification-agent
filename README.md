@@ -108,276 +108,73 @@ Use any problem directory that exists under `problems/` and contains both `spec/
 
 ## Follow-Along Setup For Viewers
 
+- [Windows Setup](#windows-users-use-wsl)
+- [macOS Setup](#macos-users)
+- [Linux Setup](#linux-users)
+
 ### Windows Users: Use WSL
+The Agentic Flow implementation depends on a linux based system, hence use WSL.
 
-Do not run `./verifier` directly from Command Prompt or PowerShell. Run it inside WSL.
-
-#### 1. Check whether WSL is installed
-
-Open PowerShell or Command Prompt as Administrator and run:
-
-```powershell
-wsl --status
-```
-
-If WSL is missing, install it with:
-
-```powershell
-wsl --install
-```
-
-If you want to explicitly install Ubuntu:
+Run `./verifier` inside Ubuntu on WSL, not in PowerShell.
+Install WSL once from an elevated PowerShell window:
 
 ```powershell
 wsl --install -d Ubuntu
 ```
 
-If you want to see the distributions you can install:
-
-```powershell
-wsl --list --online
-```
-
-Reboot if Windows asks you to.
-
-#### 2. Open your Linux shell
-
-After reboot, launch Ubuntu from the Start menu or run:
-
-```powershell
-wsl
-```
-
-#### 3. Install the system dependencies inside WSL
-
-Run these commands in the WSL terminal:
-
+Then Skip to the instructions for linux users @ [Linux Setup](#linux-users)
 ```bash
 sudo apt-get update
 sudo apt-get install -y git python3 python3-venv python3-pip iverilog nodejs npm
-```
-
-#### 4. Get into the repository
-
-If you already have the repo on the Windows side, enter it from WSL using its mounted path, for example:
-
-```bash
-cd /mnt/c/path/to/project_2
-```
-
-If you are cloning it fresh inside WSL instead:
-
-```bash
-git clone <your-repo-url>
+git clone <your-repo-url> project_2
 cd project_2
-```
-
-#### 5. Create the Python environment
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-#### 6. Install Codex CLI with npm
-
-```bash
 npm install -g @openai/codex
-```
-
-If the `codex` command is not found immediately after install, open a new shell or make sure your npm global bin directory is on `PATH`.
-
-#### 7. Log into Codex
-
-Recommended:
-
-```bash
 codex login
-```
-
-If you need a device-code style flow:
-
-```bash
-codex login --device-auth
-```
-
-#### 8. Smoke-check the repo setup
-
-```bash
 python3 scripts/bootstrap_env.py --problem problem_1 --root .
-codex --help
-```
-
-#### 9. Run the agentic verifier flow
-
-Start with one short run:
-
-```bash
-./verifier --problem problem_1 --max-iters 1
-```
-
-Then run a longer loop:
-
-```bash
 ./verifier --problem problem_1 --max-iters 3
-```
-
-#### 10. Check the results
-
-```bash
-ls outputs/problem_1/iterations
-sed -n '1,160p' outputs/problem_1/iterations/iter_01/reports/iteration_summary.md
-```
-
-If the run succeeds completely, you should eventually see:
-
-```text
-outputs/problem_1/final/golden_tb.v
 ```
 
 ### macOS Users
 
-Codex CLI is officially supported on macOS, so you can run the verifier directly from Terminal.
-
-#### 1. Install Apple command-line tools
+Run this in Terminal:
 
 ```bash
 xcode-select --install
-```
-
-#### 2. Install Homebrew if you do not already have it
-
-```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Follow the PATH instructions that Homebrew prints before continuing.
-
-#### 3. Install the required packages
-
-```bash
 brew install git python node icarus-verilog
-```
-
-#### 4. Clone or enter the repository
-
-```bash
-git clone <your-repo-url>
+git clone <your-repo-url> project_2
 cd project_2
-```
-
-#### 5. Create the Python environment
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-#### 6. Install Codex CLI with npm
-
-```bash
 npm install -g @openai/codex
-```
-
-#### 7. Log into Codex
-
-```bash
 codex login
-```
-
-If you prefer device auth:
-
-```bash
-codex login --device-auth
-```
-
-#### 8. Verify the local toolchain
-
-```bash
 python3 scripts/bootstrap_env.py --problem problem_1 --root .
-codex --help
-```
-
-#### 9. Run the verifier
-
-```bash
-./verifier --problem problem_1 --max-iters 1
 ./verifier --problem problem_1 --max-iters 3
-```
-
-#### 10. Inspect artifacts
-
-```bash
-ls outputs/problem_1/iterations
-sed -n '1,160p' outputs/problem_1/iterations/iter_01/reports/iteration_summary.md
 ```
 
 ### Linux Users
 
-The simplest instructions below are for Ubuntu or Debian-based systems. If you use Fedora, Arch, or another distro, install equivalent packages with your package manager.
-
-#### 1. Install the system packages
+These commands assume Ubuntu or Debian:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y git python3 python3-venv python3-pip iverilog nodejs npm
-```
-
-#### 2. Clone or enter the repository
-
-```bash
-git clone <your-repo-url>
+git clone <your-repo-url> project_2
 cd project_2
-```
-
-#### 3. Create the Python environment
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-#### 4. Install Codex CLI with npm
-
-```bash
 npm install -g @openai/codex
-```
-
-#### 5. Log into Codex
-
-```bash
 codex login
-```
-
-Optional device-auth flow:
-
-```bash
-codex login --device-auth
-```
-
-#### 6. Validate the repo environment
-
-```bash
 python3 scripts/bootstrap_env.py --problem problem_1 --root .
-codex --help
-```
-
-#### 7. Run the verifier
-
-```bash
-./verifier --problem problem_1 --max-iters 1
 ./verifier --problem problem_1 --max-iters 3
 ```
 
-#### 8. Inspect artifacts
-
-```bash
-ls outputs/problem_1/iterations
-sed -n '1,160p' outputs/problem_1/iterations/iter_01/reports/iteration_summary.md
-```
+If the run succeeds, the final testbench is written to `outputs/problem_1/final/golden_tb.v`.
 
 ## What A Run Produces
 
