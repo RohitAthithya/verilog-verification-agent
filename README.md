@@ -115,7 +115,7 @@ Use any problem directory that exists under `problems/` and contains both `spec/
 ### Windows Users: Use WSL
 The Agentic Flow implementation depends on a linux based system, hence use WSL.
 
-Run `./verifier` inside Ubuntu on WSL, not in PowerShell.
+Run `./verifier` inside Ubuntu on WSL, not in PowerShell.\
 Install WSL once from an elevated PowerShell window:
 
 ```powershell
@@ -123,20 +123,6 @@ wsl --install -d Ubuntu
 ```
 
 Then Skip to the instructions for linux users @ [Linux Setup](#linux-users)
-```bash
-sudo apt-get update
-sudo apt-get install -y git python3 python3-venv python3-pip iverilog nodejs npm
-git clone <your-repo-url> project_2
-cd project_2
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-npm install -g @openai/codex
-codex login
-python3 scripts/bootstrap_env.py --problem problem_1 --root .
-./verifier --problem problem_1 --max-iters 3
-```
-
 ### macOS Users
 
 Run this in Terminal:
