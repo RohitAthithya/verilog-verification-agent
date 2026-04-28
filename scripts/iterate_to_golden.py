@@ -179,6 +179,26 @@ def main():
             else:
                 print(f"[warn] Golden iteration found but generated_tb.v missing at: {tb_src}")
 
+            reverse_rc = run_cmd(
+                [
+                    "python3",
+                    "scripts/reverse_engineer_rtl.py",
+                    "--problem",
+                    problem,
+                    "--root",
+                    str(root),
+                    "--winner-tag",
+                    tag,
+                ],
+                cwd=root,
+                allow_fail=True,
+            )
+            if reverse_rc == 1:
+                print(
+                    "[warn] Reverse-engineering validation did not complete successfully. "
+                    f"Inspect {final_dir / 'reverse_engineering'} for details."
+                )
+
             print(f"[success] Stopping after {tag}")
             return
 

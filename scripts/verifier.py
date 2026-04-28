@@ -562,6 +562,27 @@ def main() -> int:
                 final_tb = final_dir / "golden_tb.v"
                 final_tb.write_text(read_text(tb_path), encoding="utf-8")
                 print(f"[success] Golden testbench written to: {final_tb}")
+
+                reverse_proc = run_cmd(
+                    [
+                        "python3",
+                        "scripts/reverse_engineer_rtl.py",
+                        "--problem",
+                        problem,
+                        "--root",
+                        str(root),
+                        "--winner-tag",
+                        tag,
+                    ],
+                    cwd=root,
+                    check=False,
+                )
+                if reverse_proc.returncode == 1:
+                    print(
+                        "[warn] Reverse-engineering validation did not complete successfully. "
+                        f"Inspect {final_dir / 'reverse_engineering'} for details."
+                    )
+
                 return 0
 
             prev_iter = iter_dir

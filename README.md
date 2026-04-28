@@ -21,11 +21,22 @@ The current primary flow is implemented in [scripts/verifier.py](/mnt/c/Personal
 7. Classifies outcomes using `TB_PASS` and `TB_FAIL`.
 8. Writes simulation, analysis, and summary artifacts.
 9. Stops when exactly one candidate passes and all others fail with no compile/run/unknown statuses.
+10. Runs a reverse-engineering cross-check that generates a candidate RTL from the spec plus `golden_tb.v`, validates that RTL against the golden TB, compares it against the winning mutant, and writes a comparative study.
 
 If a golden discriminator is found, the testbench is copied to:
 
 ```text
 outputs/<problem>/final/golden_tb.v
+```
+
+The reverse-engineering stage also writes:
+
+```text
+outputs/<problem>/final/rvs_engr_rtl_<problem>.v
+outputs/<problem>/final/rvs_engr_wrapper_<problem>.v
+outputs/<problem>/final/rvs_engr_compare_tb_<problem>.v
+outputs/<problem>/final/reverse_engineering_summary.json
+outputs/<problem>/final/reverse_engineering_comparative_study.md
 ```
 
 ## Current Status And Scope
@@ -161,6 +172,7 @@ python3 scripts/bootstrap_env.py --problem problem_1 --root .
 ```
 
 If the run succeeds, the final testbench is written to `outputs/problem_1/final/golden_tb.v`.
+If the reverse-engineering cross-check also succeeds, the same `final/` directory will contain the reverse-engineered RTL and its comparison artifacts.
 
 ## What A Run Produces
 
@@ -169,7 +181,16 @@ A typical successful or partial run writes artifacts like these:
 ```text
 outputs/problem_1/
 ├── final/
-│   └── golden_tb.v
+│   ├── golden_tb.v
+│   ├── rvs_engr_rtl_problem_1.v
+│   ├── rvs_engr_wrapper_problem_1.v
+│   ├── rvs_engr_compare_tb_problem_1.v
+│   ├── reverse_engineering_summary.json
+│   ├── reverse_engineering_comparative_study.md
+│   ├── functional_comparison/
+│   │   └── comparison_result.json
+│   └── reverse_engineering/
+│       └── attempt_01/
 ├── iterations/
 │   └── iter_01/
 │       ├── codex_prompt.txt
@@ -226,6 +247,12 @@ python3 scripts/iterate_to_golden.py --problem problem_1 --root . --max-iters 3
 ```
 
 That alternative flow is the one that writes `agent_input/iteration_packet.json` and `agent_input/agent_handoff_prompt.txt`.
+
+Run only the reverse-engineering validation stage for an already-solved problem:
+
+```bash
+python3 scripts/reverse_engineer_rtl.py --problem problem_1 --root . --winner-tag iter_01
+```
 
 ## Troubleshooting
 
